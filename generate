@@ -3,37 +3,43 @@
 import json
 import re
 import urllib.request
+import urllib.parse
 import sys
 import hashlib
 import html
 
+
 class disposableHostGenerator():
     sources = {
-        'list': [ 'https://gist.githubusercontent.com/adamloving/4401361/raw/66688cf8ad890433b917f3230f44489aa90b03b7',
-                  'https://gist.githubusercontent.com/michenriksen/8710649/raw/d42c080d62279b793f211f0caaffb22f1c980912',
-                  'https://raw.githubusercontent.com/wesbos/burner-email-providers/master/emails.txt',
-                  'https://raw.githubusercontent.com/andreis/disposable/master/blacklist.txt' ],
-        'file': [ 'blacklist.txt' ],
-        'json': [ 'https://raw.githubusercontent.com/ivolo/disposable-email-domains/master/index.json',
-                  'https://robot-mail.com/api/v1/domains' ],
-        'sha1': [ 'https://raw.githubusercontent.com/GeroldSetz/Mailinator-Domains/master/mailinator_domains_from_bdea.cc.txt' ],
-        'html': [ 'https://tempr.email', 'https://emailfake.com', 'https://www.guerrillamail.com/en/' ],
-        'option-select-box': [ 'https://temp-mail.org/en/option/change/', 'https://spamwc.de/' ],
-        'whitelist': [ 'https://raw.githubusercontent.com/andreis/disposable/master/whitelist.txt' ],
-        'whitelist_file': [ 'whitelist.txt' ]
+        'list': ['https://gist.githubusercontent.com/adamloving/4401361/raw/66688cf8ad890433b917f3230f44489aa90b03b7',
+                 'https://gist.githubusercontent.com/michenriksen/8710649/raw/d42c080d62279b793f211f0caaffb22f1c980912',
+                 'https://raw.githubusercontent.com/wesbos/burner-email-providers/master/emails.txt',
+                 'https://raw.githubusercontent.com/andreis/disposable/master/blacklist.txt'],
+        'file': ['blacklist.txt'],
+        'json': ['https://raw.githubusercontent.com/ivolo/disposable-email-domains/master/index.json',
+                 'https://getnada.com/api/v1/domains'],
+        'sha1': [
+            'https://raw.githubusercontent.com/GeroldSetz/Mailinator-Domains/master/mailinator_domains_from_bdea.cc.txt'],
+        'html': ['https://tempr.email', 'https://www.guerrillamail.com/en/', 'https://temp-mail.org/en/option/change/',
+                 'https://spamwc.de/', 'https://trashmail.com/'],
+        'whitelist': ['https://raw.githubusercontent.com/andreis/disposable/master/whitelist.txt'],
+        'whitelist_file': ['whitelist.txt']
     }
 
-    scrape_sources = [ 'https://emailfake.com' ]
+    scrape_sources = ['https://emailfake.com']
 
     domain_regex = re.compile(r'^[a-z\d-]{,63}(\.[a-z\d-]{,63})+$')
     sha1_regex = re.compile(r'^[a-fA-F0-9]{40}')
     html_re = {
         'generic': re.compile("""<option[^>]*>@?([a-z0-9\-\.\&#;\d+]+)\s*(\(PW\))?<\/option>""", re.I),
         'tempr.email': re.compile("""<option\s+value[^>]*>@?([a-z0-9\-\.\&#;\d+]+)\s*(\(PW\))?<\/option>""", re.I),
-        'emailfake.com': re.compile("""change_dropdown_list[^"]+"[^>]+>@?([a-z0-9\.-]{1,128})""", re.I)
+        'trashmail.com': re.compile("\"\@([\w\.]*)\"", re.I),
+        'temp-mail.org': re.compile("""<option value="@?[^"]+">@?([a-z0-9\-\.]+\.[a-z0-9\-\.]+)<\/option>""", re.I),
+        'spamwc.de': re.compile("""<option value="@?[^"]+">@?([a-z0-9\-\.]+\.[a-z0-9\-\.]+)<\/option>""", re.I),
+        'www.guerrillamail.com': re.compile("""<option value="@?[^"]+">@?([a-z0-9\-\.]+\.[a-z0-9\-\.]+)<\/option>""", re.I),
     }
 
-    def __init__(self, options = None, out_file = None):
+    def __init__(self, options=None, out_file=None):
         self.no_mx = {}
         self.domains = {}
         self.sha1 = {}
@@ -56,6 +62,8 @@ class disposableHostGenerator():
             print(msg)
 
     def process_source(self, url, fmt, encoding='utf-8', timeout=3, retry=None):
+        urlparser = urllib.parse
+
         if fmt not in self.supported_formats:
             return
         retry = 0 if retry is None else retry
@@ -76,7 +84,7 @@ class disposableHostGenerator():
                     url,
                     data=None,
                     headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:42.0) Gecko/20100101 Firefox/42.0'
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'
                     }
                 )
 
@@ -93,18 +101,11 @@ class disposableHostGenerator():
                 self.verbosePrint('WRN This URL does not contain a JSON array: {0}'.format(url))
                 return
             lines = list(filter(lambda line: line and isinstance(line, str), raw))
-        elif fmt == 'option-select-box':
-            dom_re = re.compile("""<option value="@?[^"]+">@?([a-z0-9\-\.]+\.[a-z0-9\-\.]+)<\/option>""", re.I)
+        if fmt in ('html'):
+            test = urlparser.urlparse(url)[1]
+            dom_re = self.html_re[test]
             lines = dom_re.findall(data.decode(encoding))
-        elif fmt == 'html':
-            dom_re = self.html_re['generic']
-            for (re_domain, re_item) in self.html_re.items():
-                if re_domain != 'generic' and re_domain in url:
-                    dom_re = re_item
-                    break
-
-            opts = dom_re.findall(data.decode(encoding))
-            lines = list(map(lambda opt: html.unescape(opt[0]) if type(opt) is tuple else opt, opts))
+            lines = list(map(lambda opt: html.unescape(opt[0]) if type(opt) is tuple else opt, lines))
         elif fmt == 'sha1':
             lines = data.splitlines()
             lines = [line.decode('ascii').lower() for line in lines]
@@ -117,7 +118,6 @@ class disposableHostGenerator():
 
         lines = [line.lower().strip(' .,;@') for line in lines]
         lines = list(filter(lambda line: self.domain_regex.match(line), lines))
-
         if fmt in ('whitelist', 'whitelist_file'):
             for host in lines:
                 if not host in self.skip:
@@ -141,7 +141,7 @@ class disposableHostGenerator():
                 need_scrape = True
 
         if need_scrape:
-            return self.process_source(url, fmt, encoding, timeout, retry+1)
+            return self.process_source(url, fmt, encoding, timeout, retry + 1)
 
         return True
 
@@ -178,10 +178,10 @@ class disposableHostGenerator():
         # build domains dict
         for fmt in self.supported_formats:
             for src in self.sources[fmt]:
+                print("Fetching domains name from {0}".format(src))
                 if self.options.get('src_filter') is not None and \
-                   not src == self.options.get('src_filter'):
+                        not src == self.options.get('src_filter'):
                     continue
-
                 try:
                     self.process_source(src, fmt)
                 except Exception as err:
@@ -278,6 +278,7 @@ class disposableHostGenerator():
         with open(self.out_file + '_sha1.json', 'w') as ff:
             ff.write(json.dumps(domains_sha1))
 
+
 if __name__ == '__main__':
     exit_status = 1
     options = {
@@ -288,7 +289,7 @@ if __name__ == '__main__':
     }
 
     if '--src' in sys.argv:
-        options['src_filter'] = sys.argv[sys.argv.index('--src')+1]
+        options['src_filter'] = sys.argv[sys.argv.index('--src') + 1]
 
     dhg = disposableHostGenerator(options)
     if dhg.generate() or options.get('src_filter') is not None:
