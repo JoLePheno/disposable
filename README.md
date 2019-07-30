@@ -66,7 +66,7 @@ if disposable.Domain("gmail.com") {
 To update the list of domains run `.generate` (requires `python3`), and optionally submit a PR.
 
 ```lang=bash
-$ ./.generate
+$ ./generate
 Fetched 5196 domains and 6593 hashes
  - 2000 domain(s) added
  - 75 domain(s) removed
